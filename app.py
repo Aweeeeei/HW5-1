@@ -144,7 +144,7 @@ with col_input:
         st.session_state['input_text'] = selected_example['text']
         
         # 顯示 Toast 提示 (短暫出現的訊息)
-        st.toast(f"已載入範例 #{idx+1} ({selected_example['type']})", icon="✅")
+        st.toast(f"已載入範例 #{idx+1}", icon="✅")
         
         # Index + 1 準備下一次
         st.session_state['example_index'] += 1
