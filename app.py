@@ -3,64 +3,93 @@ import numpy as np
 import pandas as pd
 import re
 from collections import Counter
+import jieba
 
 # --- 頁面設定 ---
 st.set_page_config(
-    page_title="AI/Human Detector Pro",
-    page_icon="📊",
-    layout="wide" # 改為寬螢幕模式以容納圖表
+    page_title="AI/Human Detector Pro (Multi-lang)",
+    page_icon="🇨🇳",
+    layout="wide"
 )
 
-st.title("📊 AI vs Human 文本特徵分析器")
-st.markdown("此工具透過統計學特徵（句長變異數、詞彙豐富度）將文本「視覺化」，以輔助判斷是否為 AI 生成。")
+# --- 側邊欄設定 ---
+with st.sidebar:
+    st.header("⚙️ 設定 (Settings)")
+    lang_mode = st.radio(
+        "選擇語言模式 (Language Mode)",
+        ["Traditional Chinese (繁中)", "English"]
+    )
+    
+    st.info("ℹ️ 中文模式使用 `jieba` 進行斷詞技術分析。")
 
-# --- 簡單的停用詞表 (為了過濾掉 the, a, is 這種無意義詞) ---
-STOPWORDS = set([
-    'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 
-    'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'it', 'this', 'that'
-])
+st.title(f"📊 {lang_mode.split('(')[0]} 文本特徵分析器")
+st.markdown("此工具透過統計學特徵（句長變異數、詞彙豐富度）輔助判斷是否為 AI 生成。")
 
-# --- 核心邏輯：特徵提取與分析 ---
-def analyze_text_features(text):
+# --- 停用詞設定 (過濾無意義詞彙) ---
+STOPWORDS_EN = set(['the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'of', 'in', 'on', 'at', 'to', 'it', 'this', 'that'])
+STOPWORDS_ZH = set(['的', '了', '和', '是', '就', '都', '而', '及', '與', '著', '或', '一個', '沒有', '我們', '你們', '他們', '在', '這', '那'])
+
+# --- 核心邏輯 ---
+def analyze_text_features(text, mode):
     clean_text = text.strip()
     if not clean_text:
         return None
 
-    # 1. 切分句子
-    sentences = re.split(r'[.!?]+', clean_text)
+    sentences = []
+    words = []
+    filtered_words = []
+
+    # === 針對不同語言的處理邏輯 ===
+    if mode == "English":
+        # 英文：用 . ! ? 切句，用空白切詞
+        sentences = re.split(r'[.!?\n]+', clean_text)
+        words = re.findall(r'\w+', clean_text.lower())
+        stopwords = STOPWORDS_EN
+        
+    else: # Traditional Chinese
+        # 中文：用 。 ！ ？ \n 切句
+        sentences = re.split(r'[。！？\n]+', clean_text)
+        # 使用 jieba 斷詞
+        words = list(jieba.cut(clean_text))
+        # 過濾掉標點符號與空白
+        words = [w for w in words if w.strip() and len(w) > 0]
+        stopwords = STOPWORDS_ZH
+
+    # 移除空句子
     sentences = [s.strip() for s in sentences if len(s.strip()) > 0]
-    
-    # 2. 切分單字
-    words = re.findall(r'\w+', clean_text.lower())
-    
+
     if len(words) < 5:
         return None
 
-    # --- 特徵計算 ---
-    # 句長列表
-    sentence_lengths = [len(s.split()) for s in sentences]
+    # --- 特徵計算 (中英通用) ---
     
-    # 平均句長與標準差
+    # 句長計算 (中文算詞數，也可以改算字數，這裡統一算詞數/Token數)
+    if mode == "English":
+        sentence_lengths = [len(s.split()) for s in sentences]
+    else:
+        # 中文句長：計算該句切分後的詞數
+        sentence_lengths = [len(list(jieba.cut(s))) for s in sentences]
+    
     avg_len = np.mean(sentence_lengths)
     std_dev = np.std(sentence_lengths) if len(sentence_lengths) > 1 else 0
 
-    # 詞彙豐富度 (Type-Token Ratio)
+    # 詞彙豐富度
     unique_words = set(words)
     ttr = len(unique_words) / len(words)
 
-    # 過濾後的詞頻 (移除停用詞)
-    filtered_words = [w for w in words if w not in STOPWORDS]
+    # 過濾停用詞 (為了畫圖好看)
+    filtered_words = [w for w in words if w not in stopwords and len(w) > 1] # 中文通常過濾單字詞
     word_counts = Counter(filtered_words)
 
-    # --- 評分邏輯 ---
+    # --- 評分邏輯 (Heuristic) ---
     score = 0.5 
-    # AI 傾向於標準差小 (平穩)
-    if std_dev < 6: score += 0.25
-    elif std_dev > 12: score -= 0.25 # Human 傾向於標準差大 (波動)
+    
+    # 調整閾值：中文的斷句習慣跟英文略有不同，稍微寬鬆一點
+    if std_dev < 4: score += 0.25      # 極度平穩 -> AI
+    elif std_dev > 10: score -= 0.25   # 波動大 -> Human
 
-    # AI 傾向於豐富度低 (重複)
-    if ttr < 0.45: score += 0.15
-    elif ttr > 0.65: score -= 0.15
+    if ttr < 0.4: score += 0.15        # 用詞重複 -> AI
+    elif ttr > 0.65: score -= 0.15     # 用詞豐富 -> Human
 
     final_score = min(max(score, 0.01), 0.99)
     
@@ -77,28 +106,24 @@ def analyze_text_features(text):
     }
 
 # --- UI 介面 ---
-col_input, col_result = st.columns([1, 2]) # 左窄右寬
+col_input, col_result = st.columns([1, 2])
 
 with col_input:
     st.subheader("📝 輸入區")
-    user_input = st.text_area(
-        "請貼上英文文章",
-        height=300,
-        placeholder="貼上你的文章..."
-    )
+    placeholder_text = "請貼上中文文章..." if "Chinese" in lang_mode else "Paste English text here..."
+    user_input = st.text_area("Input Text", height=300, placeholder=placeholder_text, label_visibility="collapsed")
     analyze_btn = st.button("🚀 開始深度分析", type="primary")
 
-# --- 分析結果顯示 ---
 if analyze_btn and user_input:
-    data = analyze_text_features(user_input)
+    # 呼叫分析函數，傳入語言模式
+    data = analyze_text_features(user_input, lang_mode)
     
     if data is None:
-        st.warning("⚠️ 文本過短，無法進行有效統計分析。")
+        st.warning("⚠️ 文本過短，無法分析。")
     else:
         with col_result:
             st.subheader("🔍 分析報告")
             
-            # 1. 頂部結果卡片
             ai_score = data['score']
             if ai_score > 0.6:
                 result_text = "高度疑似 AI 生成"
@@ -116,54 +141,33 @@ if analyze_btn and user_input:
             </div>
             """, unsafe_allow_html=True)
             
-            st.write("") # Spacer
+            st.write("")
 
-            # 2. 關鍵指標 (KPIs)
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
             kpi1.metric("總句子數", data['total_sentences'])
-            kpi2.metric("平均句長 (字)", f"{data['avg_len']:.1f}")
-            kpi3.metric("句長波動 (Std Dev)", f"{data['std_dev']:.1f}", help="數值越高代表長短句交錯越明顯 (Human特徵)")
-            kpi4.metric("詞彙豐富度 (TTR)", f"{data['ttr']:.2f}", help="數值越高代表用詞越不重複")
+            kpi2.metric("平均句長 (詞)", f"{data['avg_len']:.1f}")
+            kpi3.metric("句長波動 (Std Dev)", f"{data['std_dev']:.1f}")
+            kpi4.metric("詞彙豐富度 (TTR)", f"{data['ttr']:.2f}")
 
-            # 3. 分頁顯示圖表
-            tab1, tab2, tab3 = st.tabs(["📈 句型結構分析", "🔠 常用詞彙統計", "📄 原始數據"])
+            tab1, tab2 = st.tabs(["📈 句型結構分析", "🔠 常用詞彙統計"])
 
             with tab1:
-                st.markdown("**句長波動圖 (Sentence Burstiness)**")
-                st.caption("AI 通常像機器人一樣規律 (線條平緩)，人類寫作則情緒起伏大 (線條劇烈跳動)。")
-                
-                # 建立 DataFrame 給圖表用
+                st.caption("觀察重點：人類寫作時，句子長度（詞數）通常會有劇烈波動。")
                 chart_data = pd.DataFrame({
                     "句子順序": range(1, len(data['sentence_lengths']) + 1),
-                    "句子長度 (單字數)": data['sentence_lengths']
+                    "詞數": data['sentence_lengths']
                 })
-                
-                st.line_chart(
-                    chart_data, 
-                    x="句子順序", 
-                    y="句子長度 (單字數)",
-                    color="#FF4B4B"
-                )
+                st.line_chart(chart_data, x="句子順序", y="詞數", color="#FF4B4B")
 
             with tab2:
-                st.markdown("**高頻詞彙 (Top Keywords)**")
-                st.caption("排除常見介系詞後的關鍵字分佈。")
-                
-                # 取出前 10 名
+                st.caption("排除常見助詞（的、了、是...）後的關鍵字。")
                 top_words = data['word_counts'].most_common(10)
                 if top_words:
-                    words_df = pd.DataFrame(top_words, columns=["單字", "出現次數"])
-                    st.bar_chart(words_df.set_index("單字"))
+                    words_df = pd.DataFrame(top_words, columns=["詞彙", "次數"])
+                    st.bar_chart(words_df.set_index("詞彙"))
                 else:
-                    st.info("沒有足夠的關鍵字資料。")
-
-            with tab3:
-                st.json({
-                    "AI_Score": data['score'],
-                    "Sentence_Lengths": data['sentence_lengths'],
-                    "Sentences": data['sentences']
-                })
+                    st.info("關鍵字數據不足")
 
 elif not analyze_btn:
     with col_result:
-        st.info("👈 請在左側輸入文章並按下分析按鈕")
+        st.info("👈 請選擇語言模式，輸入文章並分析")
