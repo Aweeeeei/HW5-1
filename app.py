@@ -30,6 +30,10 @@ EXAMPLES = {
         {
             "type": "Human",
             "text": "You know that feeling when you finish a really good book and you just stare at the wall for like ten minutes? That was me last night. The ending was so unexpected, yet it made perfect sense. I was crying, smiling, just a total mess. I wish I could erase my memory and read it all over again for the first time. Truly a masterpiece."
+        },
+        {
+            "type": "AI",
+            "text": "Regular physical exercise is crucial for maintaining good overall health. It offers numerous benefits for both the body and the mind. Engaging in consistent physical activity helps to control body weight effectively. Furthermore, exercise can improve cardiovascular health significantly over time. Additionally, it strengthens muscles and bones, reducing the risk of injury. Regular physical exercise also boosts mental health by reducing stress and anxiety levels. Therefore, incorporating physical activity into one's daily routine is highly recommended for a healthy lifestyle."
         }
     ],
     "Traditional Chinese (繁中)": [
@@ -48,6 +52,10 @@ EXAMPLES = {
         {
             "type": "Human",
             "text": "救命啊！我刚刚把手機忘在計程車上了，現在整個人超焦慮。裡面有我所有的照片還有沒備份的聯絡人資料，如果找不回來我真的會崩潰。司機大哥也不接電話，客服又一直忙線中，這到底是甚麼倒楣的一天？拜託好心人如果撿到可以送去警察局，我願意請你吃大餐答謝，真的拜託了！"
+        },
+        {
+            "type": "AI",
+            "text": "環境保護是當今全球面臨的一個重要議題。隨著工業化的快速發展，自然的生態平衡受到了嚴重的挑戰。我們必須意識到保護地球家園的緊迫性與必要性。減少一次性塑膠製品的使用是一個關鍵的步驟。此外，積極推廣再生能源的應用也是非常重要的措施。每個人都應該提高自身的環保意識並採取實際行動。只有透過共同的努力，我們才能實現可持續發展的長遠目標。"
         }
     ]
 }
