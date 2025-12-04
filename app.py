@@ -4,16 +4,16 @@ import pandas as pd
 import re
 from collections import Counter
 import jieba
-import zlib  # <--- 新增核心：用於計算資訊熵 (壓縮率)
+import zlib
 
 # --- 頁面設定 ---
 st.set_page_config(
-    page_title="AI/Human Detector Ultra",
-    page_icon="🧬",
+    page_title="AI/Human Detector Tuned",
+    page_icon="⚖️",
     layout="wide"
 )
 
-# --- 定義範例資料庫 (包含之前的擴充範例) ---
+# --- 範例資料庫 ---
 EXAMPLES = {
     "English": [
         {
@@ -57,32 +57,24 @@ EXAMPLES = {
 if 'input_text' not in st.session_state: st.session_state['input_text'] = ""
 if 'example_index' not in st.session_state: st.session_state['example_index'] = 0
 
-# --- 側邊欄設定 ---
+# --- 側邊欄 ---
 with st.sidebar:
-    st.header("⚙️ 設定 (Settings)")
+    st.header("⚙️ 設定")
     lang_mode = st.radio("選擇語言模式", ["Traditional Chinese (繁中)", "English"])
-    st.markdown("---")
-    st.info("""
-    **🧬 Ultra 核心技術：**
-    除了句法分析外，此版本引入 **Zlib 壓縮算法** 來計算「文本熵」。
-    - **原理**：AI 生成的文本通常規律性較強，壓縮率較高（檔案變小）。
-    - **權重**：熵值佔評分的 40%。
-    """)
+    st.info("⚠️ 已啟用「高靈敏度模式」以加強 AI 偵測能力。")
 
-st.title(f"🧬 {lang_mode.split('(')[0]} 文本偵測器 (Ultra版)")
+st.title(f"⚖️ {lang_mode.split('(')[0]} 文本偵測器 (Tuned)")
 
-# --- 停用詞 ---
 STOPWORDS_EN = set(['the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'of', 'in', 'on', 'at', 'to', 'it', 'this', 'that'])
 STOPWORDS_ZH = set(['的', '了', '和', '是', '就', '都', '而', '及', '與', '著', '或', '一個', '沒有', '我們', '你們', '他們', '在', '這', '那'])
 
-# --- 核心邏輯：加入 Zlib 演算法 ---
+# --- 核心邏輯 (參數已調校) ---
 def analyze_text_features(text, mode):
     clean_text = text.strip()
     if not clean_text: return None
 
-    # 1. 基礎前處理
+    # 1. 斷詞斷句
     sentences, words, stopwords = [], [], []
-
     if mode == "English":
         sentences = re.split(r'[.!?\n]+', clean_text)
         words = re.findall(r'\w+', clean_text.lower())
@@ -96,7 +88,7 @@ def analyze_text_features(text, mode):
     sentences = [s.strip() for s in sentences if len(s.strip()) > 0]
     if len(words) < 5: return None
 
-    # 2. 特徵 A：句長波動 (Burstiness)
+    # 2. 計算特徵數值
     if mode == "English":
         sentence_lengths = [len(s.split()) for s in sentences]
     else:
@@ -105,67 +97,72 @@ def analyze_text_features(text, mode):
     avg_len = np.mean(sentence_lengths)
     std_dev = np.std(sentence_lengths) if len(sentence_lengths) > 1 else 0
 
-    # 3. 特徵 B：詞彙豐富度 (Type-Token Ratio)
     unique_words = set(words)
     ttr = len(unique_words) / len(words)
-    filtered_words = [w for w in words if w not in stopwords and len(w) > 1]
-    word_counts = Counter(filtered_words)
-
-    # 4. 特徵 C：資訊熵 / 壓縮率 (Zlib Entropy) [NEW]
-    # 將文本轉為 bytes 並壓縮，計算壓縮比率
+    
     text_bytes = clean_text.encode('utf-8')
     compressed_data = zlib.compress(text_bytes)
     compression_ratio = len(compressed_data) / len(text_bytes)
 
-    # --- 綜合加權評分系統 ---
-    # 目標：將各項指標轉換為 0 (Human) ~ 1 (AI) 的分數
-    
-    # (A) 句長評分 (30%)
+    # --- 3. 評分邏輯 (Tuned Thresholds) ---
     score_std = 0.5
-    thresh_std_low = 5 if mode == "English" else 3
-    thresh_std_high = 12 if mode == "English" else 10
-    
-    if std_dev < thresh_std_low: score_std = 1.0     # AI (平穩)
-    elif std_dev > thresh_std_high: score_std = 0.0  # Human (波動)
-
-    # (B) 豐富度評分 (30%)
     score_ttr = 0.5
-    if ttr < 0.4: score_ttr = 1.0        # AI (重複)
-    elif ttr > 0.65: score_ttr = 0.0     # Human (豐富)
-
-    # (C) 壓縮率評分 (40%) [最關鍵指標]
     score_zlib = 0.5
-    # 根據經驗法則設定的閾值
-    thresh_zlib_ai = 0.38 if mode == "English" else 0.43
-    thresh_zlib_human = 0.50 if mode == "English" else 0.55
-    
-    if compression_ratio < thresh_zlib_ai: score_zlib = 1.0      # AI (規律好壓)
-    elif compression_ratio > thresh_zlib_human: score_zlib = 0.0 # Human (混亂難壓)
 
-    # 計算加權平均分
-    final_score = (score_std * 0.3) + (score_ttr * 0.3) + (score_zlib * 0.4)
+    # [調整點 1] 放寬 Std Dev 判定：英文 7 以下都算平穩(AI)，中文 5 以下
+    # 理由：現代 AI 比較會換句長了，所以要提高 AI 的容許範圍
+    thresh_std_ai = 7.0 if mode == "English" else 5.0
+    
+    if std_dev < thresh_std_ai: 
+        score_std = 1.0 # 強烈懷疑是 AI
+    elif std_dev > (thresh_std_ai + 5): 
+        score_std = 0.0 # Human
+    else:
+        # 中間地帶，稍微偏向 Human
+        score_std = 0.4
+
+    # [調整點 2] TTR 調整
+    if ttr < 0.45: score_ttr = 1.0
+    elif ttr > 0.65: score_ttr = 0.0
+    else: score_ttr = 0.4
+
+    # [調整點 3] Zlib 壓縮率調整 (最重要)
+    # 短文本壓縮率會虛高，所以要放寬 AI 的上限
+    # 英文：0.45 以下視為 AI (原本是 0.38)
+    # 中文：0.55 以下視為 AI (原本是 0.43)
+    thresh_zlib_ai = 0.45 if mode == "English" else 0.55
+    
+    if compression_ratio < thresh_zlib_ai: 
+        score_zlib = 1.0
+    elif compression_ratio > (thresh_zlib_ai + 0.1): 
+        score_zlib = 0.0
+    else:
+        score_zlib = 0.4
+
+    # 加權平均 (稍微降低 TTR 權重，因為短文 TTR 不準)
+    final_score = (score_std * 0.35) + (score_ttr * 0.25) + (score_zlib * 0.40)
     
     return {
         "score": final_score, 
         "features": {
             "std_dev": std_dev,
             "ttr": ttr,
-            "compression_ratio": compression_ratio
+            "compression_ratio": compression_ratio,
+            "thresh_std_ai": thresh_std_ai,     # 回傳閾值給 Debug 看
+            "thresh_zlib_ai": thresh_zlib_ai    # 回傳閾值給 Debug 看
         },
-        "sentences": sentences, 
         "sentence_lengths": sentence_lengths,
         "avg_len": avg_len, 
-        "word_counts": word_counts,
+        "word_counts": Counter([w for w in words if w not in stopwords and len(w)>1]),
         "total_sentences": len(sentences)
     }
 
-# --- UI 介面 ---
+# --- UI ---
 col_input, col_result = st.columns([1, 2])
 
 with col_input:
     st.subheader("📝 輸入區")
     
-    # --- 🎲 範例按鈕 (保持你的功能) ---
     def load_next_example():
         key = "English" if "English" in lang_mode else "Traditional Chinese (繁中)"
         examples = EXAMPLES[key]
@@ -177,31 +174,23 @@ with col_input:
 
     st.button("🎲 載入範例 (輪播)", on_click=load_next_example, type="secondary")
 
-    user_input = st.text_area(
-        "Input Text",
-        height=350, 
-        placeholder="請輸入文字...", 
-        label_visibility="collapsed",
-        key="input_text" 
-    )
-    
-    analyze_btn = st.button("🚀 開始深度分析", type="primary")
+    user_input = st.text_area("Input Text", height=350, key="input_text", placeholder="輸入文字...", label_visibility="collapsed")
+    analyze_btn = st.button("🚀 開始分析", type="primary")
 
-# --- 分析結果顯示 ---
 if analyze_btn and user_input:
     data = analyze_text_features(user_input, lang_mode)
     
     if data is None:
-        st.warning("⚠️ 文本過短，無法分析。")
+        st.warning("⚠️ 文本過短")
     else:
         with col_result:
-            st.subheader("🔍 分析報告")
-            
             score = data['score']
-            if score > 0.65:
-                res_txt, res_color = "高度疑似 AI 生成", "red"
+            
+            # 讓判定稍微嚴格一點： > 0.55 就算疑似 AI
+            if score > 0.55:
+                res_txt, res_color = "疑似 AI 生成", "red"
             elif score < 0.35:
-                res_txt, res_color = "可能是 Human 撰寫", "green"
+                res_txt, res_color = "疑似 Human 撰寫", "green"
             else:
                 res_txt, res_color = "混合特徵 / 不確定", "orange"
 
@@ -212,41 +201,22 @@ if analyze_btn and user_input:
             </div>
             """, unsafe_allow_html=True)
             
-            st.write("")
+            # --- Debug 區塊：這是你檢查為什麼「全部都判成 Human」的關鍵 ---
+            with st.expander("🐞 開發者數據 (Debug Info)", expanded=True):
+                f = data['features']
+                st.write("如果數值 **小於** 閾值，會被判定為 AI。")
+                
+                c_d1, c_d2, c_d3 = st.columns(3)
+                c_d1.metric("句長波動 (Std)", f"{f['std_dev']:.2f}", f"閾值: {f['thresh_std_ai']}")
+                c_d2.metric("壓縮率 (Zlib)", f"{f['compression_ratio']:.2f}", f"閾值: {f['thresh_zlib_ai']}")
+                c_d3.metric("詞彙豐富度", f"{f['ttr']:.2f}", "閾值: 0.45")
+                
+                st.caption(f"目前分數: {score:.2f} (0=Human, 1=AI)")
 
-            # --- 3個關鍵指標 Dashboard (新增壓縮率) ---
-            f = data['features']
-            c1, c2, c3 = st.columns(3)
-            
-            c1.metric("1. 句長波動度", f"{f['std_dev']:.1f}", 
-                      delta="低 (像AI)" if f['std_dev'] < 5 else "高 (像人)", delta_color="inverse")
-            
-            c2.metric("2. 詞彙豐富度", f"{f['ttr']:.2f}",
-                      delta="低 (像AI)" if f['ttr'] < 0.4 else "高 (像人)", delta_color="inverse")
-            
-            c3.metric("3. 資訊熵 (壓縮率)", f"{f['compression_ratio']:.2f}",
-                      delta="低 (像AI)" if f['compression_ratio'] < 0.4 else "高 (像人)", delta_color="inverse",
-                      help="數值越低代表文本越規律、越容易被預測 (AI特徵)")
-
-            # --- 圖表區 ---
-            tab1, tab2 = st.tabs(["📈 句型結構分析", "🔠 常用詞彙統計"])
-
+            # 圖表
+            tab1, tab2 = st.tabs(["📈 句長波動", "🔠 詞彙統計"])
             with tab1:
-                st.caption("Human 通常句長波動大 (線條劇烈跳動)；AI 則較平穩。")
-                chart_data = pd.DataFrame({
-                    "句序": range(1, len(data['sentence_lengths']) + 1),
-                    "詞數": data['sentence_lengths']
-                })
-                st.line_chart(chart_data, x="句序", y="詞數", color="#FF4B4B")
-
+                st.line_chart(pd.DataFrame({"Len": data['sentence_lengths']}), color="#FF4B4B")
             with tab2:
                 top_words = data['word_counts'].most_common(10)
-                if top_words:
-                    words_df = pd.DataFrame(top_words, columns=["詞彙", "次數"])
-                    st.bar_chart(words_df.set_index("詞彙"))
-                else:
-                    st.info("關鍵字數據不足")
-
-elif not analyze_btn:
-    with col_result:
-        st.info("👈 點擊「🎲 載入範例」測試最新的多維度偵測演算法。")
+                if top_words: st.bar_chart(pd.DataFrame(top_words, columns=["W", "C"]).set_index("W"))
