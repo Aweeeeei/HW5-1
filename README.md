@@ -38,8 +38,8 @@
 
 1.  **Clone 專案**
     ```bash
-    git clone <your-repo-url>
-    cd <your-project-folder>
+    git clone https://github.com/Aweeeeei/HW5-1.git
+    cd HW5-1
     ```
 
 2.  **安裝依賴套件**
